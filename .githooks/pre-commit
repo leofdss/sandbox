@@ -36,30 +36,42 @@ ${blocked_files}"
 fi
 
 # 2b. Conteúdo adicionado com formato de chave conhecida.
-patterns=(
+# Prefixos de chave são sensíveis a maiúsculas e precisam iniciar um token;
+# assim "risk-assessment-..." ou "asiaPacific..." não viram falsos positivos.
+b='(^|[^A-Za-z0-9_-])'
+key_patterns=(
     '-----BEGIN ([A-Z]+ )*PRIVATE KEY( BLOCK)?-----'
-    '(AKIA|ASIA)[0-9A-Z]{16}'
-    'gh[pousr]_[A-Za-z0-9]{36,}'
-    'github_pat_[A-Za-z0-9_]{40,}'
-    'glpat-[A-Za-z0-9_-]{20,}'
-    'sk-(ant-|proj-)?[A-Za-z0-9_-]{20,}'
-    'AIza[0-9A-Za-z_-]{35}'
-    'xox[abposr]-[A-Za-z0-9-]{10,}'
-    'npm_[A-Za-z0-9]{36}'
-    '(sk|rk)_live_[A-Za-z0-9]{20,}'
+    "${b}(AKIA|ASIA)[0-9A-Z]{16}"
+    "${b}gh[pousr]_[A-Za-z0-9]{36,}"
+    "${b}github_pat_[A-Za-z0-9_]{40,}"
+    "${b}glpat-[A-Za-z0-9_-]{20,}"
+    "${b}sk-(ant-|proj-)?[A-Za-z0-9_-]{20,}"
+    "${b}AIza[0-9A-Za-z_-]{35}"
+    "${b}xox[abposr]-[A-Za-z0-9-]{10,}"
+    "${b}npm_[A-Za-z0-9]{36}"
+    "${b}(sk|rk)_live_[A-Za-z0-9]{20,}"
     'eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
     '://[^/[:space:]:@]+:[^/[:space:]@]{3,}@'
+)
+# Atribuições genéricas: insensíveis a maiúsculas (API_KEY, Password, ...).
+generic_patterns=(
     '(api[_-]?key|secret|token|passw(or)?d|client[_-]?secret)["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"'][^"'"'"'[:space:]$<{]{12,}["'"'"']'
 )
-regex="$(IFS='|'; printf '%s' "${patterns[*]}")"
+key_regex="$(IFS='|'; printf '%s' "${key_patterns[*]}")"
+generic_regex="$(IFS='|'; printf '%s' "${generic_patterns[*]}")"
 
-hits="$(git diff --cached -U0 --no-color --no-ext-diff --diff-filter=ACMR "${base[@]}" \
-    | awk '/^\+\+\+ /{file=substr($0,7); next} /^\+/{print file": "substr($0,2)}' \
-    | grep -iE -- "${regex}" | grep -v 'gitleaks:allow' || true)"
+added="$(git diff --cached -U0 --no-color --no-ext-diff --diff-filter=ACMR "${base[@]}" \
+    | awk '/^\+\+\+ /{file=substr($0,7); next} /^\+/{print file": "substr($0,2)}')"
+hits="$({
+    grep -E -- "${key_regex}" <<<"${added}"
+    grep -iE -- "${generic_regex}" <<<"${added}"
+} | grep -v 'gitleaks:allow' | sort -u || true)"
 if [[ -n "${hits}" ]]; then
     # Nunca imprimir o segredo: o trecho detectado é mascarado (terminal e logs de CI).
     fail "possíveis segredos nas linhas adicionadas:
-$(printf '%s\n' "${hits}" | sed -E "s#${regex}#[REDIGIDO]#Ig" | cut -c1-100)"
+$(printf '%s\n' "${hits}" \
+    | sed -E -e "s#${key_regex}#[REDIGIDO]#g" -e "s#${generic_regex}#[REDIGIDO]#Ig" \
+    | cut -c1-100)"
 fi
 
 exit 0
