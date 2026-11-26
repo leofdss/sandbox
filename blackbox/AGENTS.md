@@ -45,6 +45,7 @@ Use `VERIFY_PULL=0 sandbox-verify` para verificações sem baixar a imagem BusyB
 - PipeWire/PulseAudio pode conceder acesso a microfone e outras fontes de mídia; não ativá-lo no perfil headless.
 - GPU, X11 e WSLg são opt-in. Preferir Wayland a X11.
 - Não incluir tokens, cookies, chaves de provedores ou credenciais em arquivos versionados, `Containerfile`, Compose, logs ou prompts.
+- O repositório é **público**. Não usar `git commit --no-verify`, não desativar `core.hooksPath` e não remover regras de `.githooks/pre-commit`, `.gitignore` ou `.github/workflows/secret-scan.yml` para fazer um commit passar. Se o hook bloquear, parar e informar o usuário; usar `gitleaks:allow` somente para falso positivo confirmado pelo usuário.
 - Não executar `git push`, `sudo`, `doas`, `podman system reset` ou `down -v` sem decisão explícita do usuário. O `reset` também apaga o armazenamento aninhado.
 - Não desativar confirmações do OpenCode nem recomendar `--auto` como configuração padrão.
 

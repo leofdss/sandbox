@@ -1,7 +1,37 @@
 # Local environment settings and overrides
 .env
+.env.*
+!.env.example
 *.local.yaml
 *.local.yml
+
+# Secrets and credentials: never versioned (also blocked by .githooks/pre-commit)
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.ppk
+*.kdbx
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
+.npmrc
+.pypirc
+.netrc
+.git-credentials
+.htpasswd
+credentials
+credentials.json
+secrets.json
+secrets.yaml
+secrets.yml
+secrets.toml
+*.tfvars
+*.tfstate
+*.tfstate.backup
 
 # Test/runtime artifacts
 .sandbox-write-test.*

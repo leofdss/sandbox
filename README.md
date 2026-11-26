@@ -51,6 +51,14 @@ cd sandbox                # raiz do repositório
 
 No primeiro uso do OpenCode, execute `/connect` para autenticar um provedor. Nenhuma credencial do host é copiada automaticamente.
 
+> **Repositório público.** Logo após clonar, ative o hook que bloqueia chaves e tokens em commits:
+>
+> ```bash
+> git config core.hooksPath .githooks
+> ```
+>
+> Enquanto ele não estiver ativo, o `./sandbox.sh` exibe um aviso. Veja [Proteção contra vazamento de chaves](#proteção-contra-vazamento-de-chaves).
+
 ### `./sandbox.sh` ou `./sandbox`?
 
 São o mesmo comando, chamados de pastas diferentes:
@@ -99,6 +107,26 @@ Todas as demais opções estão em `./sandbox.sh help`.
 4. Baixe seus projetos somente dentro de `sandbox/`.
 
 As imagens são recriadas pelo `blackbox/Containerfile`. Credenciais, sessões do OpenCode e armazenamento aninhado ficam em volumes do Podman e **não acompanham o clone**; faça backup separado se precisar migrá-los.
+
+## Proteção contra vazamento de chaves
+
+Este repositório é público: tudo que entra num commit enviado ao GitHub deve ser tratado como publicado para sempre. Há três barreiras:
+
+| Barreira | Onde | O que faz |
+|---|---|---|
+| `.gitignore` | raiz | Ignora `.env`, chaves (`*.pem`, `*.key`, `id_*`), `credentials.json`, `.npmrc`, `.netrc`, `*.tfvars` etc. |
+| Hook `pre-commit` | `.githooks/pre-commit` | Bloqueia o commit se o stage tiver arquivo sensível ou texto com formato de chave (AWS, GitHub, GitLab, Anthropic/OpenAI, Google, Slack, Stripe, npm, JWT, chave privada, senha em URL, `password = "..."`). Usa o [gitleaks](https://github.com/gitleaks/gitleaks) quando instalado e sempre executa a verificação embutida. O segredo nunca é impresso. |
+| CI `secret-scan` | `.github/workflows/secret-scan.yml` | Em todo push e pull request, roda o gitleaks (versão e SHA-256 fixos) sobre **todo o histórico** e repete as regras do hook. Pega o que escapou do hook local. |
+
+Regras:
+
+- Ative o hook em cada clone: `git config core.hooksPath .githooks`.
+- Não use `git commit --no-verify` para contornar o bloqueio.
+- Falso positivo: adicione o comentário `gitleaks:allow` na linha e explique o motivo na mensagem do commit.
+- Valores padrão não secretos ficam em `blackbox/.env.example`; valores reais ficam em `blackbox/.env`, que é ignorado.
+- **Se uma chave chegou a um commit**, revogue-a no provedor imediatamente. Apagar o arquivo ou reescrever o histórico não basta: o GitHub e clones podem manter cópias.
+
+Recomendado no GitHub (*Settings → Code security*): ativar **Secret scanning** e **Push protection**, gratuitos para repositórios públicos.
 
 ## Guia para agentes de IA
 
