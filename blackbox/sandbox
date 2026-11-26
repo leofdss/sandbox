@@ -39,13 +39,18 @@ fi
 export WORKSPACE_DIR
 export SANDBOX_NAME="${NAME}"
 
+# GUI mount variables are internal: only configure_gui may set them. Values
+# inherited from the host environment must not leak into the fingerprint.
+unset X11_DIR WAYLAND_DISPLAY_NAME XAUTHORITY_HOSTNAME \
+    HOST_WAYLAND_SOCKET HOST_PIPEWIRE_SOCKET HOST_PULSE_SOCKET HOST_XAUTHORITY_FILE
+
 usage() {
     cat <<'EOF'
 Uso: ./sandbox <comando> [opções]
 
   build                    constrói a imagem fixada no Containerfile
   up                       inicia o perfil headless
-  shell                    abre Bash no perfil headless
+  shell                    abre Bash (reutiliza GUI/portas já em execução)
   ai                       abre OpenCode V2 com servidor privado
   run <prompt...>          executa um prompt não interativo no OpenCode
   exec <comando...>        executa no ambiente atual (headless ou GUI)
@@ -125,35 +130,52 @@ start() {
         config_files+=("${extra_files[index]}")
     done
 
+    # Only settings the selected profile actually uses enter the fingerprint;
+    # e.g. a new host DISPLAY must not recreate a headless container.
     local fingerprint
+    local source_paths=("${WORKSPACE_DIR}")
     fingerprint="$({
         cat "${config_files[@]}"
         printf 'WORKSPACE_DIR=%s\n' "${WORKSPACE_DIR}"
         printf 'SANDBOX_PROFILE=%s\n' "${SANDBOX_PROFILE}"
         printf 'SANDBOX_PIDS_LIMIT=%s\n' "${SANDBOX_PIDS_LIMIT:-2048}"
-        printf 'APP_PORT=%s\n' "${APP_PORT:-}"
-        printf 'DRI_DEVICE=%s\n' "${DRI_DEVICE:-}"
-        printf 'WAYLAND_DISPLAY_NAME=%s\n' "${WAYLAND_DISPLAY_NAME:-}"
-        printf 'DISPLAY=%s\n' "${DISPLAY:-}"
-        printf 'X11_DIR=%s\n' "${X11_DIR:-}"
-        printf 'HOST_WAYLAND_SOCKET=%s\n' "${HOST_WAYLAND_SOCKET:-}"
-        printf 'HOST_PIPEWIRE_SOCKET=%s\n' "${HOST_PIPEWIRE_SOCKET:-}"
-        printf 'HOST_PULSE_SOCKET=%s\n' "${HOST_PULSE_SOCKET:-}"
-        printf 'HOST_XAUTHORITY_FILE=%s\n' "${HOST_XAUTHORITY_FILE:-}"
-        printf 'XAUTHORITY_HOSTNAME=%s\n' "${XAUTHORITY_HOSTNAME:-}"
+        if [[ "${profile}" == "headless-ports" ]]; then
+            printf 'APP_PORT=%s\n' "${APP_PORT:-}"
+        fi
+        if [[ "${profile}" == "gui-gpu" ]]; then
+            printf 'DRI_DEVICE=%s\n' "${DRI_DEVICE:-}"
+        fi
+        if [[ "${profile}" == gui* ]]; then
+            printf 'WAYLAND_DISPLAY_NAME=%s\n' "${WAYLAND_DISPLAY_NAME:-}"
+            printf 'X11_DIR=%s\n' "${X11_DIR:-}"
+            if [[ -n "${X11_DIR:-}" ]]; then
+                printf 'DISPLAY=%s\n' "${DISPLAY:-}"
+            fi
+            printf 'HOST_WAYLAND_SOCKET=%s\n' "${HOST_WAYLAND_SOCKET:-}"
+            printf 'HOST_PIPEWIRE_SOCKET=%s\n' "${HOST_PIPEWIRE_SOCKET:-}"
+            printf 'HOST_PULSE_SOCKET=%s\n' "${HOST_PULSE_SOCKET:-}"
+            printf 'HOST_XAUTHORITY_FILE=%s\n' "${HOST_XAUTHORITY_FILE:-}"
+            printf 'XAUTHORITY_HOSTNAME=%s\n' "${XAUTHORITY_HOSTNAME:-}"
+        fi
         podman image inspect localhost/sandbox-ai:2.4.1 --format '{{.Id}}'
     })"
 
+    if [[ "${profile}" == "gui-gpu" ]]; then
+        source_paths+=("${DRI_DEVICE:-}")
+    fi
+    if [[ "${profile}" == gui* ]]; then
+        source_paths+=(
+            "${X11_DIR:-}"
+            "${HOST_WAYLAND_SOCKET:-}"
+            "${HOST_PIPEWIRE_SOCKET:-}"
+            "${HOST_PULSE_SOCKET:-}"
+            "${HOST_XAUTHORITY_FILE:-}"
+        )
+    fi
+
     # A replaced socket or Xauthority inode also needs a fresh bind mount.
     local source_path
-    for source_path in \
-        "${WORKSPACE_DIR}" \
-        "${X11_DIR:-}" \
-        "${DRI_DEVICE:-}" \
-        "${HOST_WAYLAND_SOCKET:-}" \
-        "${HOST_PIPEWIRE_SOCKET:-}" \
-        "${HOST_PULSE_SOCKET:-}" \
-        "${HOST_XAUTHORITY_FILE:-}"; do
+    for source_path in "${source_paths[@]}"; do
         if [[ -n "${source_path}" && -e "${source_path}" ]]; then
             fingerprint+="$(stat -c '%n=%d:%i' "${source_path}")"
         fi
@@ -165,10 +187,16 @@ start() {
     export SANDBOX_CONFIG_ID="$(printf '%s' "${fingerprint}" | sha256sum | cut -d' ' -f1)"
 
     if container_exists; then
+        local running
+        running="$(podman inspect --format '{{.State.Running}}' "${NAME}")"
         if [[ "$(current_profile)" == "${profile}" ]] && \
            [[ "$(current_config_id)" == "${SANDBOX_CONFIG_ID}" ]] && \
-           [[ "$(podman inspect --format '{{.State.Running}}' "${NAME}")" == "true" ]]; then
+           [[ "${running}" == "true" ]]; then
             return
+        fi
+        if [[ "${running}" == "true" ]]; then
+            printf 'sandbox: recriando o container (perfil %s -> %s); sessões abertas nele serão encerradas.\n' \
+                "$(current_profile)" "${profile}" >&2
         fi
         # Changing config, workspace, sockets or devices requires recreation.
         compose_base down >/dev/null 2>&1 || podman rm -f "${NAME}"
@@ -177,9 +205,21 @@ start() {
     compose_all up -d
 }
 
+current_workspace() {
+    podman inspect --format \
+        '{{range .Mounts}}{{if eq .Destination "/workspace"}}{{.Source}}{{end}}{{end}}' \
+        "${NAME}" 2>/dev/null || true
+}
+
+# For commands that only need a shell inside the sandbox (shell, ai, run,
+# verify, exec): reuse a running GUI/ports container instead of destroying it,
+# as long as it uses the current image and workspace. A headless container
+# goes through the full start() check, so config changes are still applied.
 start_any() {
     if container_exists && \
        [[ "$(podman inspect --format '{{.State.Running}}' "${NAME}")" == "true" ]] && \
+       [[ "$(current_profile)" != "headless" ]] && \
+       [[ "$(current_workspace)" == "${WORKSPACE_DIR}" ]] && \
        podman image exists localhost/sandbox-ai:2.4.1 && \
        [[ "$(podman inspect --format '{{.Image}}' "${NAME}")" == \
           "$(podman image inspect localhost/sandbox-ai:2.4.1 --format '{{.Id}}')" ]]; then
@@ -327,18 +367,15 @@ case "${command_name}" in
         start
         ;;
     shell)
-        profile="headless"
-        start
+        start_any
         compose_base exec "${SERVICE}" bash --login
         ;;
     ai)
-        profile="headless"
-        start
+        start_any
         compose_base exec "${SERVICE}" opencode --standalone /workspace "$@"
         ;;
     run)
-        profile="headless"
-        start
+        start_any
         compose_base exec -T "${SERVICE}" opencode run --standalone "$@"
         ;;
     exec)
@@ -362,8 +399,7 @@ case "${command_name}" in
         fi
         ;;
     verify)
-        profile="headless"
-        start
+        start_any
         compose_base exec -T "${SERVICE}" sandbox-verify "$@"
         ;;
     ports)

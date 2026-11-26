@@ -55,7 +55,7 @@ O bind mount do workspace é o único acesso intencional a arquivos comuns do ho
 
 `/run/user/1000` é criado na camada gravável descartável do container, pertence ao UID 1000 e usa modo 0700. O Compose GUI monta sockets individuais nesse diretório, sem compartilhar o `XDG_RUNTIME_DIR` completo do host. `/var/tmp` e o storage rootful não utilizado são tmpfs para que as declarações `VOLUME` herdadas da imagem base não deixem volumes anônimos a cada recriação; somente o storage rootless é persistente.
 
-O container externo é recriado ao trocar de perfil, pois mounts e dispositivos não podem ser adicionados a um container em execução. Um hash do workspace, das opções, dos arquivos Compose, da imagem e dos inodes dos sockets/cookies impede que um container antigo seja reutilizado com outra configuração. Os volumes nomeados sobrevivem; processos do container anterior não.
+O container externo é recriado ao trocar de perfil explicitamente (`up`, `ports`, `gui`), pois mounts e dispositivos não podem ser adicionados a um container em execução. Comandos que só precisam de um shell (`shell`, `ai`, `run`, `verify`, `exec`) reutilizam um container GUI ou com portas em execução se a imagem e o workspace coincidirem. Um hash do workspace, das opções usadas pelo perfil, dos arquivos Compose, da imagem e dos inodes dos sockets/cookies impede que um container antigo seja reutilizado com outra configuração; variáveis do host que o perfil não usa (como `DISPLAY` no headless) ficam fora do hash. Os volumes nomeados sobrevivem; processos do container anterior não.
 
 ## Reprodutibilidade e atualização
 

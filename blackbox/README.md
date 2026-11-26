@@ -108,7 +108,7 @@ O caminho escolhido continua montado como `/workspace`. Arquivos criados nele pe
 | `./sandbox down` | Remove o container e preserva os volumes; não aceita opções. |
 | `./sandbox reset` | **Apaga todos os volumes**, após confirmação. |
 
-Trocar entre headless e GUI recria o container para aplicar/remover mounts. Mudanças de workspace, sockets, GPU, portas, imagem ou overrides também são detectadas por um identificador de configuração. Os volumes persistem, mas processos em execução no container antigo são encerrados.
+Trocar de perfil com `up`, `ports` ou `gui` recria o container para aplicar/remover mounts, com um aviso quando ele está em execução. `shell`, `ai`, `run`, `verify` e `exec` reutilizam um container GUI ou com portas já em execução, desde que use a imagem e o workspace atuais; só sem ele sobem o perfil headless. Mudanças de workspace, imagem, overrides e das opções usadas pelo perfil (sockets e `DISPLAY` na GUI, GPU, `APP_PORT` em `ports`) são detectadas por um identificador de configuração; variáveis que o perfil não usa não causam recriação. Os volumes persistem, mas processos em execução no container antigo são encerrados.
 
 ## Abrir aplicativos gráficos
 
