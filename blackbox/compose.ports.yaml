@@ -1,0 +1,6 @@
+services:
+  dev:
+    ports:
+      # Nested Podman containers share this outer sandbox network namespace.
+      # Publish on loopback only unless remote access is explicitly wanted.
+      - 127.0.0.1:${APP_PORT:-8080}:${APP_PORT:-8080}

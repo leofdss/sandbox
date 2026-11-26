@@ -1,0 +1,6 @@
+.env
+*.local.yaml
+*.local.yml
+.sandbox-write-test.*
+__pycache__/
+*.pyc

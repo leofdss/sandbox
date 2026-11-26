@@ -1,0 +1,8 @@
+services:
+  dev:
+    environment:
+      PIPEWIRE_RUNTIME_DIR: /run/user/1000
+      PIPEWIRE_REMOTE: pipewire-0
+    volumes:
+      # Audio/video access also may expose microphone/camera sources.
+      - ${HOST_PIPEWIRE_SOCKET:?Set HOST_PIPEWIRE_SOCKET}:/run/user/1000/pipewire-0

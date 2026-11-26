@@ -1,0 +1,13 @@
+# Local environment settings and overrides
+.env
+*.local.yaml
+*.local.yml
+
+# Test/runtime artifacts
+.sandbox-write-test.*
+__pycache__/
+*.pyc
+
+# Keep only the workspace guide in Git. User projects are independent.
+sandbox/*
+!sandbox/README.md

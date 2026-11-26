@@ -1,0 +1,8 @@
+services:
+  dev:
+    environment:
+      LD_LIBRARY_PATH: /usr/lib/wsl/lib
+    devices:
+      - /dev/dxg:/dev/dxg:rwm
+    volumes:
+      - /usr/lib/wsl:/usr/lib/wsl:ro

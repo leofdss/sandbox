@@ -1,0 +1,125 @@
+# syntax=docker/dockerfile:1
+
+# Multi-arch digest for quay.io/podman/stable:v6.1.3-immutable.
+# Update deliberately; do not replace it with a floating tag.
+FROM quay.io/podman/stable:v6.1.3-immutable@sha256:4cc31850c189386faca95d72988fe9573b3df06360cb65aea3ff5b17a04d0454
+
+ARG OPENCODE_VERSION=2.4.1
+ARG TARGETARCH=amd64
+
+USER root
+
+# The base image already contains Podman, fuse-overlayfs, Git and a "podman"
+# user (UID/GID 1000), with subordinate IDs suitable for nested rootless use.
+RUN dnf -y install \
+      alsa-utils \
+      bash-completion \
+      ca-certificates \
+      curl \
+      dejavu-sans-fonts \
+      dejavu-sans-mono-fonts \
+      dejavu-serif-fonts \
+      fd-find \
+      findutils \
+      fontconfig \
+      foot \
+      gcc \
+      gcc-c++ \
+      git \
+      glibc-langpack-en \
+      jq \
+      less \
+      make \
+      mesa-dri-drivers \
+      mesa-libEGL \
+      mesa-libGL \
+      mesa-vulkan-drivers \
+      nano \
+      nodejs \
+      npm \
+      openssh-clients \
+      openssl \
+      pipewire \
+      pipewire-pulseaudio \
+      pipewire-utils \
+      pkgconf-pkg-config \
+      podman-compose \
+      procps-ng \
+      pulseaudio-utils \
+      python3 \
+      python3-pip \
+      ripgrep \
+      tar \
+      unzip \
+      wayland-utils \
+      which \
+      xdg-utils \
+      xdpyinfo \
+      xeyes \
+      zip \
+      --exclude=container-selinux \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf /var/log/dnf* /var/log/yum.*
+
+# Install the official glibc CLI, never via "curl | bash". Both architecture
+# checksums come from the immutable v2.4.1 GitHub release.
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+      amd64) \
+        asset="opencode-linux-x64-baseline.tar.gz"; \
+        checksum="9ddd18e3faf64eaeccf6a0fcbc96a5c7a14520ae5fd5b61e5be51d894f478b47" \
+        ;; \
+      arm64) \
+        asset="opencode-linux-arm64.tar.gz"; \
+        checksum="cb28cf94541aeb62a4b2ea5997a99b5dd6bae595a772f36fbe279299f2032a4f" \
+        ;; \
+      *) echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl --proto '=https' --tlsv1.2 -fL \
+      "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/${asset}" \
+      -o "/tmp/${asset}"; \
+    echo "${checksum}  /tmp/${asset}" | sha256sum -c -; \
+    tar -xzf "/tmp/${asset}" -C /usr/local/bin opencode; \
+    chmod 0755 /usr/local/bin/opencode; \
+    opencode --version; \
+    rm -f "/tmp/${asset}"
+
+COPY --chmod=0755 scripts/entrypoint.sh /usr/local/bin/sandbox-entrypoint
+COPY --chmod=0755 scripts/healthcheck.sh /usr/local/bin/sandbox-healthcheck
+COPY --chmod=0755 scripts/verify.sh /usr/local/bin/sandbox-verify
+COPY --chmod=0644 config/opencode/opencode.jsonc /etc/opencode/opencode.jsonc
+COPY --chmod=0644 AGENTS.md /etc/opencode/instructions/AGENTS.md
+COPY --chmod=0644 docs/OPENCODE.md /etc/opencode/instructions/OPENCODE.md
+COPY --chmod=0644 docs/SECURITY.md /etc/opencode/instructions/SECURITY.md
+COPY --chmod=0644 .opencode/agents /etc/opencode/agents
+COPY --chmod=0644 .opencode/commands /etc/opencode/commands
+COPY --chmod=0644 config/gitconfig /etc/gitconfig
+COPY --chmod=0644 config/bashrc.sh /etc/profile.d/sandbox.sh
+
+ENV HOME=/home/podman \
+    XDG_CONFIG_HOME=/home/podman/.config \
+    XDG_DATA_HOME=/home/podman/.local/share \
+    XDG_CACHE_HOME=/home/podman/.cache \
+    XDG_RUNTIME_DIR=/run/user/1000 \
+    LANG=en_US.UTF-8 \
+    LC_ALL=en_US.UTF-8 \
+    TERM=xterm-256color \
+    COLORTERM=truecolor \
+    BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 \
+    OPENCODE_DISABLE_CLAUDE_CODE=1
+
+RUN mkdir -p /workspace \
+        /run/user/1000/containers \
+        /run/user/1000/pulse \
+        /home/podman/.config/opencode \
+        /home/podman/.local/share/opencode \
+        /home/podman/.local/share/containers \
+        /home/podman/.cache/opencode \
+    && chown -R 1000:1000 /workspace /home/podman /run/user/1000 \
+    && chmod 0700 /run/user/1000
+
+WORKDIR /workspace
+USER 1000:1000
+STOPSIGNAL SIGTERM
+ENTRYPOINT ["/usr/local/bin/sandbox-entrypoint"]
+CMD ["sleep", "infinity"]

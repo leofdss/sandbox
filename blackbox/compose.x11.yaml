@@ -1,0 +1,7 @@
+services:
+  dev:
+    environment:
+      DISPLAY: ${DISPLAY:-:0}
+    volumes:
+      # Compatibility only. Prefer Wayland: X11 clients have weaker isolation.
+      - ${X11_DIR:-/tmp/.X11-unix}:/tmp/.X11-unix:ro

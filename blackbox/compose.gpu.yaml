@@ -1,0 +1,8 @@
+services:
+  dev:
+    group_add:
+      # Preserve access to the render group on the host (requires crun).
+      - keep-groups
+    devices:
+      # Only the render node, not the display-control card node.
+      - ${DRI_DEVICE:-/dev/dri/renderD128}:/dev/dri/renderD128:rwm

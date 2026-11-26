@@ -1,0 +1,10 @@
+services:
+  dev:
+    environment:
+      XDG_RUNTIME_DIR: /run/user/1000
+      WAYLAND_DISPLAY: ${WAYLAND_DISPLAY_NAME:-wayland-0}
+      QT_QPA_PLATFORM: "wayland;xcb"
+      GDK_BACKEND: "wayland,x11"
+    volumes:
+      # A single socket, not the host's complete XDG_RUNTIME_DIR.
+      - ${HOST_WAYLAND_SOCKET:?Set HOST_WAYLAND_SOCKET}:/run/user/1000/${WAYLAND_DISPLAY_NAME:-wayland-0}

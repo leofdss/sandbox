@@ -1,0 +1,10 @@
+[safe]
+	directory = /workspace
+[init]
+	defaultBranch = main
+[pull]
+	ff = only
+[fetch]
+	prune = true
+[diff]
+	colorMoved = default

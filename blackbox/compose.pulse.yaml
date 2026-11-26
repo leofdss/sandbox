@@ -1,0 +1,7 @@
+services:
+  dev:
+    environment:
+      # Used by PipeWire's PulseAudio compatibility server and by WSLg.
+      PULSE_SERVER: unix:/run/user/1000/pulse/native
+    volumes:
+      - ${HOST_PULSE_SOCKET:?Set HOST_PULSE_SOCKET}:/run/user/1000/pulse/native

@@ -1,0 +1,77 @@
+x-podman:
+  # Required when userns_mode is used by podman-compose.
+  in_pod: false
+
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Containerfile
+    image: localhost/sandbox-ai:2.4.1
+    container_name: ${SANDBOX_NAME:-sandbox-ai}
+    hostname: sandbox-ai
+    user: "1000:1000"
+    # Map whichever host UID/GID invokes Podman to the unprivileged user 1000.
+    userns_mode: "keep-id:uid=1000,gid=1000"
+    init: true
+    tty: true
+    stdin_open: true
+    working_dir: /workspace
+    command: ["sleep", "infinity"]
+    restart: "no"
+    environment:
+      HOME: /home/podman
+      XDG_CONFIG_HOME: /home/podman/.config
+      XDG_DATA_HOME: /home/podman/.local/share
+      XDG_CACHE_HOME: /home/podman/.cache
+      XDG_RUNTIME_DIR: /run/user/1000
+      SANDBOX_PROFILE: ${SANDBOX_PROFILE:-headless}
+      TERM: xterm-256color
+      COLORTERM: truecolor
+    labels:
+      ai.sandbox.profile: ${SANDBOX_PROFILE:-headless}
+      ai.sandbox.config-id: ${SANDBOX_CONFIG_ID:-unmanaged}
+      ai.sandbox.host-podman-socket: "not-mounted"
+    volumes:
+      # Only the selected project is visible; no host HOME, SSH agent or
+      # host Podman socket is mounted. Z relabels only on SELinux hosts.
+      - ${WORKSPACE_DIR:-.}:/workspace:Z
+      - opencode-config:/home/podman/.config/opencode
+      - opencode-data:/home/podman/.local/share/opencode
+      - opencode-cache:/home/podman/.cache/opencode
+      - podman-storage:/home/podman/.local/share/containers
+    tmpfs:
+      # /run/user/1000 stays in the container's disposable writable layer,
+      # already owned by UID 1000. This also works before GUI bind mounts.
+      # Override the two remaining VOLUME declarations from the base image so
+      # recreating the sandbox does not leak anonymous volumes. Rootful Podman
+      # is intentionally unsupported; rootless storage is the named volume.
+      - /var/lib/containers:rw,nosuid,nodev,size=64m,mode=1777
+      - /var/tmp:rw,nosuid,nodev,size=2g,mode=1777
+    devices:
+      # Needed by fuse-overlayfs for nested Podman; no /dev/dri or /dev/snd.
+      - /dev/fuse:/dev/fuse:rwm
+    security_opt:
+      # Required by nested Podman on SELinux hosts. This does not disable
+      # SELinux on the host; see docs/SECURITY.md for the trade-off.
+      - label=disable
+    cap_drop:
+      - NET_RAW
+    pids_limit: ${SANDBOX_PIDS_LIMIT:-2048}
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/sandbox-healthcheck"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  # Stable names preserve state even if the blackbox directory is moved.
+  opencode-config:
+    name: sandbox_opencode-config
+  opencode-data:
+    name: sandbox_opencode-data
+  opencode-cache:
+    name: sandbox_opencode-cache
+  podman-storage:
+    name: sandbox_podman-storage

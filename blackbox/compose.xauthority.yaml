@@ -1,0 +1,10 @@
+services:
+  dev:
+    # FamilyLocal cookies are looked up using the client's hostname.
+    hostname: ${XAUTHORITY_HOSTNAME:?Set XAUTHORITY_HOSTNAME}
+    environment:
+      XAUTHORITY: /run/user/1000/.Xauthority
+    volumes:
+      # Only the resolved cookie file, never the host HOME. Treat it as a
+      # session credential and use --no-x11 when it is not needed.
+      - ${HOST_XAUTHORITY_FILE:?Set HOST_XAUTHORITY_FILE}:/run/user/1000/.Xauthority:ro

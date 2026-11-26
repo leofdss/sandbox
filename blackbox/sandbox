@@ -1,0 +1,392 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+cd "${ROOT_DIR}"
+
+# Read only the simple KEY=VALUE settings understood by this wrapper. Unlike
+# "source .env", this never executes the file as shell code. Real environment
+# variables take precedence; relative workspaces are resolved from ROOT_DIR.
+if [[ -f "${ROOT_DIR}/.env" ]]; then
+    while IFS='=' read -r key value; do
+        case "${key}" in
+            SANDBOX_NAME|WORKSPACE_DIR|SANDBOX_PIDS_LIMIT|APP_PORT|DRI_DEVICE)
+                if [[ ! -v "${key}" ]]; then
+                    printf -v "${key}" '%s' "${value}"
+                    export "${key}"
+                fi
+                ;;
+        esac
+    done < "${ROOT_DIR}/.env"
+fi
+
+SERVICE="dev"
+NAME="${SANDBOX_NAME:-sandbox-ai}"
+export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-sandbox}"
+export WORKSPACE_DIR="$(realpath -- "${WORKSPACE_DIR:-${ROOT_DIR}/../sandbox}")"
+export SANDBOX_NAME="${NAME}"
+
+usage() {
+    cat <<'EOF'
+Uso: ./sandbox <comando> [opções]
+
+  build                    constrói a imagem fixada no Containerfile
+  up                       inicia o perfil headless
+  shell                    abre Bash no perfil headless
+  ai                       abre OpenCode V2 com servidor privado
+  run <prompt...>          executa um prompt não interativo no OpenCode
+  exec <comando...>        executa no ambiente atual (headless ou GUI)
+  gui [opções] [-- cmd]    inicia Wayland + áudio detectado e abre Bash
+      --gpu                também expõe /dev/dri/renderD128
+      --wslg-gpu           também expõe a vGPU do WSLg (/dev/dxg)
+      --no-x11             não expõe a compatibilidade X11
+      --no-audio           não expõe PipeWire/PulseAudio
+  gui-verify [opções]      executa os testes de container e GUI
+  verify                   testa ferramentas, workspace e Podman aninhado
+  ports                    inicia headless publicando APP_PORT em loopback
+  config                   mostra o Compose headless mesclado
+  status                   lista os serviços
+  logs                     acompanha os logs
+  doctor                   diagnostica pré-requisitos do host
+  down                     para e remove o container (preserva volumes)
+  reset                    apaga também credenciais/cache/armazenamento
+  help                     mostra esta ajuda
+
+Variáveis: WORKSPACE_DIR, SANDBOX_NAME, APP_PORT, DRI_DEVICE, VERIFY_PULL.
+EOF
+}
+
+die() {
+    printf 'sandbox: %s\n' "$*" >&2
+    exit 1
+}
+
+need_host() {
+    [[ "$(uname -s)" == "Linux" ]] || die "O modo sem VM adicional requer Linux ou WSL2."
+    [[ "$(id -u)" -ne 0 ]] || die "Execute como usuário comum; o modo rootful não é suportado."
+    command -v podman >/dev/null || die "Podman não encontrado no host."
+    command -v podman-compose >/dev/null || die "podman-compose não encontrado no host."
+    [[ "$(podman info --format '{{.Host.Security.Rootless}}')" == "true" ]] || \
+        die "O Podman do host precisa estar em modo rootless."
+    [[ -c /dev/fuse ]] || die "/dev/fuse é necessário para o Podman aninhado."
+    [[ -d "${WORKSPACE_DIR}" ]] || die "WORKSPACE_DIR não existe: ${WORKSPACE_DIR}"
+}
+
+base_files=(-f "${ROOT_DIR}/compose.yaml")
+extra_files=()
+profile="headless"
+
+compose_base() {
+    podman-compose "${base_files[@]}" "$@"
+}
+
+compose_all() {
+    podman-compose "${base_files[@]}" "${extra_files[@]}" "$@"
+}
+
+container_exists() {
+    podman container exists "${NAME}"
+}
+
+current_profile() {
+    podman inspect --format '{{ index .Config.Labels "ai.sandbox.profile" }}' "${NAME}" 2>/dev/null || true
+}
+
+current_config_id() {
+    podman inspect --format '{{ index .Config.Labels "ai.sandbox.config-id" }}' "${NAME}" 2>/dev/null || true
+}
+
+start() {
+    need_host
+    export SANDBOX_PROFILE="${profile}"
+
+    # Building here only happens on the first start. Later image rebuilds are
+    # deliberate (./sandbox build) and are detected through the image ID.
+    if ! podman image exists localhost/sandbox-ai:2.4.1; then
+        compose_all build
+    fi
+
+    local config_files=("${ROOT_DIR}/compose.yaml")
+    local index
+    for ((index = 1; index < ${#extra_files[@]}; index += 2)); do
+        config_files+=("${extra_files[index]}")
+    done
+
+    local fingerprint
+    fingerprint="$({
+        cat "${config_files[@]}"
+        printf 'WORKSPACE_DIR=%s\n' "${WORKSPACE_DIR}"
+        printf 'SANDBOX_PROFILE=%s\n' "${SANDBOX_PROFILE}"
+        printf 'SANDBOX_PIDS_LIMIT=%s\n' "${SANDBOX_PIDS_LIMIT:-2048}"
+        printf 'APP_PORT=%s\n' "${APP_PORT:-}"
+        printf 'DRI_DEVICE=%s\n' "${DRI_DEVICE:-}"
+        printf 'WAYLAND_DISPLAY_NAME=%s\n' "${WAYLAND_DISPLAY_NAME:-}"
+        printf 'DISPLAY=%s\n' "${DISPLAY:-}"
+        printf 'X11_DIR=%s\n' "${X11_DIR:-}"
+        printf 'HOST_WAYLAND_SOCKET=%s\n' "${HOST_WAYLAND_SOCKET:-}"
+        printf 'HOST_PIPEWIRE_SOCKET=%s\n' "${HOST_PIPEWIRE_SOCKET:-}"
+        printf 'HOST_PULSE_SOCKET=%s\n' "${HOST_PULSE_SOCKET:-}"
+        printf 'HOST_XAUTHORITY_FILE=%s\n' "${HOST_XAUTHORITY_FILE:-}"
+        printf 'XAUTHORITY_HOSTNAME=%s\n' "${XAUTHORITY_HOSTNAME:-}"
+        podman image inspect localhost/sandbox-ai:2.4.1 --format '{{.Id}}'
+    })"
+
+    # A replaced socket or Xauthority inode also needs a fresh bind mount.
+    local source_path
+    for source_path in \
+        "${WORKSPACE_DIR}" \
+        "${X11_DIR:-}" \
+        "${DRI_DEVICE:-}" \
+        "${HOST_WAYLAND_SOCKET:-}" \
+        "${HOST_PIPEWIRE_SOCKET:-}" \
+        "${HOST_PULSE_SOCKET:-}" \
+        "${HOST_XAUTHORITY_FILE:-}"; do
+        if [[ -n "${source_path}" && -e "${source_path}" ]]; then
+            fingerprint+="$(stat -c '%n=%d:%i' "${source_path}")"
+        fi
+    done
+    if [[ "${profile}" == "gui-wslg-gpu" ]]; then
+        fingerprint+="$(stat -c '%n=%d:%i' /dev/dxg /usr/lib/wsl)"
+    fi
+
+    export SANDBOX_CONFIG_ID="$(printf '%s' "${fingerprint}" | sha256sum | cut -d' ' -f1)"
+
+    if container_exists; then
+        if [[ "$(current_profile)" == "${profile}" ]] && \
+           [[ "$(current_config_id)" == "${SANDBOX_CONFIG_ID}" ]] && \
+           [[ "$(podman inspect --format '{{.State.Running}}' "${NAME}")" == "true" ]]; then
+            return
+        fi
+        # Changing config, workspace, sockets or devices requires recreation.
+        compose_base down >/dev/null 2>&1 || podman rm -f "${NAME}"
+    fi
+
+    compose_all up -d
+}
+
+start_any() {
+    if container_exists && \
+       [[ "$(podman inspect --format '{{.State.Running}}' "${NAME}")" == "true" ]] && \
+       podman image exists localhost/sandbox-ai:2.4.1 && \
+       [[ "$(podman inspect --format '{{.Image}}' "${NAME}")" == \
+          "$(podman image inspect localhost/sandbox-ai:2.4.1 --format '{{.Id}}')" ]]; then
+        return
+    fi
+    profile="headless"
+    start
+}
+
+canonical_socket() {
+    local path="$1"
+    [[ -S "${path}" ]] || return 1
+    readlink -f -- "${path}"
+}
+
+configure_gui() {
+    local host_runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    local wayland_name="${WAYLAND_DISPLAY:-wayland-0}"
+    local wayland_source
+    local audio="yes"
+    local x11="yes"
+    local gpu=""
+
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --gpu) gpu="dri" ;;
+            --wslg-gpu) gpu="wslg" ;;
+            --no-audio) audio="no" ;;
+            --no-x11) x11="no" ;;
+            --) shift; break ;;
+            *) die "Opção GUI desconhecida: $1" ;;
+        esac
+        shift
+    done
+
+    GUI_ARGS=()
+    if [[ "$#" -gt 0 ]]; then
+        GUI_ARGS=("$@")
+    fi
+
+    if [[ "${wayland_name}" = /* ]]; then
+        wayland_source="${wayland_name}"
+        wayland_name="$(basename -- "${wayland_name}")"
+    else
+        wayland_source="${host_runtime_dir}/${wayland_name}"
+    fi
+    HOST_WAYLAND_SOCKET="$(canonical_socket "${wayland_source}")" || \
+        die "Socket Wayland não encontrado: ${wayland_source}"
+    export HOST_WAYLAND_SOCKET
+    export WAYLAND_DISPLAY_NAME="${wayland_name}"
+    extra_files+=(-f "${ROOT_DIR}/compose.wayland.yaml")
+
+    if [[ "${x11}" == "yes" && -n "${DISPLAY:-}" ]]; then
+        if [[ -d /tmp/.X11-unix ]]; then
+            export X11_DIR=/tmp/.X11-unix
+        elif [[ -d /mnt/wslg/.X11-unix ]]; then
+            export X11_DIR=/mnt/wslg/.X11-unix
+        else
+            die "DISPLAY está definido, mas o diretório X11 não foi encontrado."
+        fi
+        export DISPLAY
+        extra_files+=(-f "${ROOT_DIR}/compose.x11.yaml")
+
+        local xauthority_file="${XAUTHORITY:-}"
+        if [[ -z "${xauthority_file}" && -n "${HOME:-}" ]]; then
+            xauthority_file="${HOME}/.Xauthority"
+        fi
+        if [[ -n "${xauthority_file}" && -f "${xauthority_file}" && -r "${xauthority_file}" ]]; then
+            HOST_XAUTHORITY_FILE="$(readlink -f -- "${xauthority_file}")"
+            export HOST_XAUTHORITY_FILE
+            export XAUTHORITY_HOSTNAME="$(hostname)"
+            extra_files+=(-f "${ROOT_DIR}/compose.xauthority.yaml")
+        elif [[ -n "${XAUTHORITY:-}" ]]; then
+            die "XAUTHORITY não é legível: ${XAUTHORITY}. Corrija-o ou use --no-x11."
+        fi
+    fi
+
+    if [[ "${audio}" == "yes" ]]; then
+        local pipewire_candidate="${PIPEWIRE_SOCKET:-${host_runtime_dir}/pipewire-0}"
+        local pulse_candidate=""
+        if [[ "${PULSE_SERVER:-}" == unix:* ]]; then
+            pulse_candidate="${PULSE_SERVER#unix:}"
+        elif [[ -n "${PULSE_SERVER:-}" && "${PULSE_SERVER}" = /* ]]; then
+            pulse_candidate="${PULSE_SERVER}"
+        elif [[ -S "${host_runtime_dir}/pulse/native" ]]; then
+            pulse_candidate="${host_runtime_dir}/pulse/native"
+        fi
+
+        if HOST_PIPEWIRE_SOCKET="$(canonical_socket "${pipewire_candidate}")"; then
+            export HOST_PIPEWIRE_SOCKET
+            extra_files+=(-f "${ROOT_DIR}/compose.pipewire.yaml")
+        elif HOST_PULSE_SOCKET="$(canonical_socket "${pulse_candidate}")"; then
+            export HOST_PULSE_SOCKET
+            extra_files+=(-f "${ROOT_DIR}/compose.pulse.yaml")
+        else
+            printf 'sandbox: áudio não detectado; continuando somente com vídeo.\n' >&2
+        fi
+    fi
+
+    case "${gpu}" in
+        dri)
+            [[ -e "${DRI_DEVICE:-/dev/dri/renderD128}" ]] || die "Dispositivo DRI não encontrado."
+            export DRI_DEVICE="${DRI_DEVICE:-/dev/dri/renderD128}"
+            extra_files+=(-f "${ROOT_DIR}/compose.gpu.yaml")
+            profile="gui-gpu"
+            ;;
+        wslg)
+            [[ -e /dev/dxg && -d /usr/lib/wsl ]] || die "vGPU do WSLg não encontrada."
+            extra_files+=(-f "${ROOT_DIR}/compose.wslg-gpu.yaml")
+            profile="gui-wslg-gpu"
+            ;;
+        *) profile="gui" ;;
+    esac
+}
+
+host_doctor() {
+    printf 'host: %s %s\n' "$(uname -s)" "$(uname -m)"
+    printf 'user: uid=%s gid=%s\n' "$(id -u)" "$(id -g)"
+    printf 'podman: '; podman --version
+    printf 'compose: '; podman-compose --version
+    printf 'rootless: %s\n' "$(podman info --format '{{.Host.Security.Rootless}}')"
+    printf '/dev/fuse: '; [[ -c /dev/fuse ]] && echo ok || echo ausente
+    printf 'workspace: %s\n' "${WORKSPACE_DIR}"
+    printf 'Wayland: '
+    canonical_socket "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/${WAYLAND_DISPLAY:-wayland-0}" || echo 'não detectado'
+    printf 'PipeWire: '
+    canonical_socket "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/pipewire-0" || echo 'não detectado'
+    printf 'PulseAudio: %s\n' "${PULSE_SERVER:-não detectado}"
+    printf 'DRI render node: '; [[ -e /dev/dri/renderD128 ]] && echo ok || echo ausente
+    printf 'WSLg vGPU: '; [[ -e /dev/dxg ]] && echo ok || echo ausente
+}
+
+command_name="${1:-help}"
+if [[ "$#" -gt 0 ]]; then
+    shift
+fi
+
+case "${command_name}" in
+    build)
+        need_host
+        compose_base build "$@"
+        ;;
+    up)
+        profile="headless"
+        start
+        ;;
+    shell)
+        profile="headless"
+        start
+        compose_base exec "${SERVICE}" bash --login
+        ;;
+    ai)
+        profile="headless"
+        start
+        compose_base exec "${SERVICE}" opencode --standalone /workspace "$@"
+        ;;
+    run)
+        profile="headless"
+        start
+        compose_base exec -T "${SERVICE}" opencode run --standalone "$@"
+        ;;
+    exec)
+        start_any
+        exec_tty=()
+        if [[ ! -t 0 || ! -t 1 ]]; then
+            exec_tty=(-T)
+        fi
+        compose_base exec "${exec_tty[@]}" "${SERVICE}" "$@"
+        ;;
+    gui|gui-verify)
+        gui_command="${command_name}"
+        configure_gui "$@"
+        start
+        if [[ "${gui_command}" == "gui-verify" ]]; then
+            compose_all exec -T -e VERIFY_GUI=1 "${SERVICE}" sandbox-verify
+        elif [[ "${#GUI_ARGS[@]}" -gt 0 ]]; then
+            compose_all exec "${SERVICE}" "${GUI_ARGS[@]}"
+        else
+            compose_all exec "${SERVICE}" bash --login
+        fi
+        ;;
+    verify)
+        profile="headless"
+        start
+        compose_base exec -T "${SERVICE}" sandbox-verify "$@"
+        ;;
+    ports)
+        profile="headless-ports"
+        extra_files+=(-f "${ROOT_DIR}/compose.ports.yaml")
+        start
+        ;;
+    config)
+        podman-compose "${base_files[@]}" config
+        ;;
+    status)
+        compose_base ps "$@"
+        ;;
+    logs)
+        compose_base logs -f "$@"
+        ;;
+    doctor)
+        host_doctor
+        ;;
+    down)
+        if [[ "$#" -gt 0 ]]; then
+            die "down não aceita argumentos. Para excluir volumes, use ./sandbox reset."
+        fi
+        compose_base down
+        ;;
+    reset)
+        printf 'Isto apaga credenciais OpenCode, cache e TODOS os containers/imagens aninhados.\n' >&2
+        read -r -p 'Digite RESET para confirmar: ' answer
+        [[ "${answer}" == "RESET" ]] || die "cancelado"
+        compose_base down -v "$@"
+        ;;
+    help|-h|--help)
+        usage
+        ;;
+    *)
+        usage >&2
+        die "Comando desconhecido: ${command_name}"
+        ;;
+esac
