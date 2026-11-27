@@ -28,3 +28,9 @@
 (^|\.)npmjs\.org$
 (^|\.)pypi\.org$
 (^|\.)pythonhosted\.org$
+
+# Rust: crates (index/static.crates.io), toolchains do rustup
+# (static.rust-lang.org) e o instalador (sh.rustup.rs)
+(^|\.)crates\.io$
+(^|\.)rust-lang\.org$
+(^|\.)rustup\.rs$
