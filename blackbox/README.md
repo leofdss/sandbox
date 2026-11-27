@@ -22,6 +22,7 @@ Somente `sandbox/` é montado por padrão como `/workspace` **dentro do containe
 - Não há `--privileged`, `SYS_ADMIN`, socket Docker/Podman do host, SSH agent ou credenciais herdadas.
 - OpenCode, checksums e imagem base são fixados para builds reproduzíveis.
 - Credenciais do OpenCode ficam em volumes nomeados, fora do repositório.
+- A saída de rede passa por um proxy com allowlist de domínios; sem ele o agente não tem rede.
 - Wayland usa um único socket; PipeWire não é necessário para abrir janelas e só entra para mídia.
 
 Consulte o [modelo de ameaças e limites](docs/SECURITY.md): container rootless reduz risco, mas não substitui VM para código hostil de alta severidade.
@@ -100,7 +101,7 @@ O caminho escolhido continua montado como `/workspace`. Arquivos criados nele pe
 | `./sandbox ai` | Abre OpenCode com servidor privado. |
 | `./sandbox run "Explique este repositório"` | Executa um prompt não interativo. |
 | `./sandbox exec <cmd>` | Executa um comando no perfil atual. |
-| `./sandbox verify` | Testa ferramentas, escrita e Podman aninhado. |
+| `./sandbox verify` | Testa ferramentas, escrita, contenção de rede e Podman aninhado. |
 | `./sandbox gui` | Abre shell com Wayland e áudio detectado. |
 | `./sandbox gui-verify` | Testa containers, Wayland e áudio. |
 | `./sandbox doctor` | Mostra pré-requisitos e sockets do host. |
@@ -157,6 +158,12 @@ podman-compose --version
 
 O `verify` executa um BusyBox sem rede, somente leitura e sem capabilities. Use `VERIFY_PULL=0 ./sandbox verify` para não baixar essa imagem de teste.
 
+### Rede de saída (allowlist)
+
+O container `dev` fica somente na rede interna `sandbox_internal`, sem rota padrão nem DNS externo. A única saída é o serviço `egress-proxy` (tinyproxy, container `sandbox-ai-egress`), que também está na rede `sandbox_egress` e encaminha apenas para os domínios de [`config/egress/allowlist.txt`](config/egress/allowlist.txt), e HTTPS somente na porta 443. `HTTP(S)_PROXY` já vem configurado, então `curl`, `git`, `npm`, `pip`, OpenCode e pulls do Podman aninhado funcionam sem ajuste; programas que ignoram o proxy simplesmente não têm rede.
+
+Para liberar outro destino, adicione uma linha à allowlist e rode `./sandbox build` e `./sandbox up`. O `verify` confirma que não há rota direta, que um host fora da lista é negado e que um host liberado responde. Conexões negadas aparecem em `podman logs sandbox-ai-egress`.
+
 Os containers internos usam a rede do container externo, conforme a configuração recomendada da imagem oficial `quay.io/podman/stable`. Assim, publicar uma porta no Podman **interno** não a publica automaticamente no host. Para expor `APP_PORT` somente em loopback:
 
 ```bash
@@ -194,6 +201,7 @@ Um socket Wayland é local ao servidor: montá-lo não o transporta para o seu l
 ├── sandbox                       interface de uso e detecção de sockets
 ├── scripts/                      entrypoint, healthcheck e testes
 ├── config/opencode/              políticas e instruções gerenciadas
+├── config/egress/                proxy e allowlist de saída
 ├── AGENTS.md                     orientação persistente para agentes
 ├── .opencode/agents/             revisores somente leitura
 ├── .opencode/commands/verify.md  comando /verify

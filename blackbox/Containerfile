@@ -50,6 +50,7 @@ RUN dnf -y install \
       python3-pip \
       ripgrep \
       tar \
+      tinyproxy \
       unzip \
       wayland-utils \
       which \
@@ -95,6 +96,10 @@ COPY --chmod=0644 .opencode/agents /etc/opencode/agents
 COPY --chmod=0644 .opencode/commands /etc/opencode/commands
 COPY --chmod=0644 config/gitconfig /etc/gitconfig
 COPY --chmod=0644 config/bashrc.sh /etc/profile.d/sandbox.sh
+# Egress proxy policy, used by the separate egress-proxy service. Baked into
+# the image: edits in the agent container never reach the proxy container.
+COPY --chmod=0644 config/egress/tinyproxy.conf /etc/tinyproxy/sandbox.conf
+COPY --chmod=0644 config/egress/allowlist.txt /etc/tinyproxy/allowlist.txt
 
 ENV HOME=/home/podman \
     XDG_CONFIG_HOME=/home/podman/.config \

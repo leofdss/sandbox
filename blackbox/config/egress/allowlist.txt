@@ -1,0 +1,30 @@
+# Destinos liberados para o container do agente (via proxy de egress).
+# Uma expressão regular estendida (ERE) por linha, comparada ao HOST do pedido,
+# sem diferenciar maiúsculas. "(^|\.)dominio\.tld$" libera o domínio e os
+# subdomínios, mas não "outrodominio.tld". Todo o resto é negado.
+#
+# Para liberar outro destino: adicione uma linha, rode "./sandbox build" e
+# "./sandbox up". A cópia lida pelo proxy fica no container dele; o agente
+# não consegue alterá-la.
+
+# Provedores de IA e autenticação do /connect do OpenCode
+(^|\.)anthropic\.com$
+(^|\.)claude\.ai$
+(^|\.)openai\.com$
+(^|\.)models\.dev$
+
+# Git e releases
+(^|\.)github\.com$
+(^|\.)githubusercontent\.com$
+
+# Registros OCI usados pelo Podman aninhado
+(^|\.)quay\.io$
+(^|\.)ghcr\.io$
+(^|\.)docker\.io$
+(^|\.)docker\.com$
+(^|\.)fedoraproject\.org$
+
+# Pacotes de linguagem
+(^|\.)npmjs\.org$
+(^|\.)pypi\.org$
+(^|\.)pythonhosted\.org$

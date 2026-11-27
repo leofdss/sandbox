@@ -28,10 +28,25 @@ services:
       SANDBOX_PROFILE: ${SANDBOX_PROFILE:-headless}
       TERM: xterm-256color
       COLORTERM: truecolor
+      # All outbound traffic goes through the allowlist proxy. Explicit values
+      # also override proxy variables Podman would copy from the host.
+      HTTP_PROXY: http://egress-proxy:8888
+      HTTPS_PROXY: http://egress-proxy:8888
+      http_proxy: http://egress-proxy:8888
+      https_proxy: http://egress-proxy:8888
+      NO_PROXY: localhost,127.0.0.1,::1
+      no_proxy: localhost,127.0.0.1,::1
     labels:
       ai.sandbox.profile: ${SANDBOX_PROFILE:-headless}
       ai.sandbox.config-id: ${SANDBOX_CONFIG_ID:-unmanaged}
       ai.sandbox.host-podman-socket: "not-mounted"
+      ai.sandbox.egress: "allowlist-proxy"
+    networks:
+      # Internal only: no default route, no external DNS. The proxy is the
+      # single way out, so code that ignores HTTP(S)_PROXY has no egress.
+      - sandbox-internal
+    depends_on:
+      - egress-proxy
     volumes:
       # Only the selected project is visible; no host HOME, SSH agent or
       # host Podman socket is mounted. Z relabels only on SELinux hosts.
@@ -64,6 +79,44 @@ services:
       timeout: 15s
       retries: 3
       start_period: 30s
+
+  egress-proxy:
+    # Same pinned image; the build happens through the dev service.
+    image: localhost/sandbox-ai:2.4.1
+    container_name: ${SANDBOX_NAME:-sandbox-ai}-egress
+    hostname: egress-proxy
+    user: "1000:1000"
+    entrypoint: ["tinyproxy"]
+    command: ["-d", "-c", "/etc/tinyproxy/sandbox.conf"]
+    restart: "no"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges
+    pids_limit: 128
+    mem_limit: 128m
+    labels:
+      ai.sandbox.role: "egress-proxy"
+    networks:
+      sandbox-internal:
+        aliases:
+          - egress-proxy
+      # Only this service has a route out of the host.
+      egress: {}
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8888"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+networks:
+  sandbox-internal:
+    name: sandbox_internal
+    internal: true
+  egress:
+    name: sandbox_egress
 
 volumes:
   # Stable names preserve state even if the blackbox directory is moved.

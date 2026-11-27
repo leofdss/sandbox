@@ -15,7 +15,7 @@ Ele **não** promete conter um exploit de kernel, um adversário com controle to
 | Containers | Podman aninhado com storage dedicado; nenhum socket do motor do host. |
 | Privilégios | Sem `--privileged`, `SYS_ADMIN` ou root como usuário de execução; `NET_RAW` removido. |
 | GUI | Wayland e mídia por overlays; somente sockets necessários; GPU opt-in. |
-| Rede | Nenhuma porta publicada por padrão; publicação explícita em loopback. |
+| Rede | Nenhuma porta publicada por padrão; publicação explícita em loopback. Saída só via proxy com allowlist. |
 | Credenciais | Nenhuma variável de provedor herdada; volumes separados e `.env` no `.gitignore`. |
 | OpenCode | Servidor privado, shell com confirmação, leituras sensíveis negadas e push/sudo bloqueados. |
 | Supply chain | Digest multi-arquitetura da base e SHA-256 dos binários OpenCode. |
@@ -40,9 +40,15 @@ Isso desativa a separação SELinux **do container externo**, não o SELinux do 
 
 ### Rede de saída
 
-A rede externa é necessária para provedores de IA, Git e registros OCI. Ela também permite exfiltração por um projeto ou dependência comprometida. As regras de leitura do OpenCode não impedem que um binário execute rede por conta própria.
+A rede externa é necessária para provedores de IA, Git e registros OCI. O container do agente não tem rota própria para fora: está numa rede interna do Podman e só alcança o `egress-proxy`, que libera os domínios de `config/egress/allowlist.txt` e túneis `CONNECT` apenas na porta 443. Isso vale também para binários que ignoram as regras do OpenCode, pois a contenção é de rede, não de configuração.
 
-Para projetos não confiáveis, use uma conta de usuário dedicada, proxy de egress com allowlist, política de firewall e credenciais de escopo mínimo. Um `network_mode: none` impediria provedores remotos e pulls; não é o default funcional deste projeto.
+Limites que permanecem:
+
+- domínios liberados continuam podendo receber dados (por exemplo, um gist no GitHub ou um pacote publicado num registro);
+- o filtro compara o nome do host; o conteúdo HTTPS não é inspecionado;
+- o proxy aceita qualquer cliente das redes privadas do Podman, então outros containers do mesmo usuário ligados à rede interna também podem usá-lo.
+
+Para projetos não confiáveis, reduza a allowlist ao mínimo, use credenciais de escopo mínimo e uma conta de usuário dedicada.
 
 ## O que o socket do host evitaria expor
 

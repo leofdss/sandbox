@@ -40,14 +40,15 @@ A imagem deriva de `quay.io/podman/stable:v6.1.3-immutable` pelo digest multi-ar
 
 ## Rede em camadas
 
-O Compose externo cria uma rede isolada com saída, sem portas publicadas. A configuração da imagem oficial define `netns="host"` para o motor aninhado: “host” nesse caso é o namespace do **container externo**, não o namespace físico da máquina.
+O Compose externo coloca o container `dev` apenas na rede `sandbox_internal` (`internal: true`: sem rota padrão e sem DNS externo) e sem portas publicadas. O serviço `egress-proxy`, um tinyproxy rodando da mesma imagem com filesystem somente leitura e sem capabilities, é o único membro também ligado à rede `sandbox_egress`, com saída. A política (allowlist de domínios, `CONNECT` só na porta 443) é copiada para a imagem; alterações feitas dentro do container do agente não chegam ao proxy. A configuração da imagem oficial define `netns="host"` para o motor aninhado: “host” nesse caso é o namespace do **container externo**, não o namespace físico da máquina.
 
 Consequências:
 
 - containers internos enxergam serviços que escutam no sandbox;
 - `-p` no motor interno não cria uma publicação no host real;
 - `compose.ports.yaml` publica explicitamente uma porta do container externo em `127.0.0.1`;
-- a saída irrestrita permite chamadas a provedores de IA, mas também exfiltração por código comprometido. Para código hostil, adicione uma política de egress/proxy fora deste escopo.
+- a saída é falha-fechada: sem o proxy o agente fica sem rede, e o `sandbox` recria o ambiente se o proxy não estiver em execução;
+- a allowlist reduz, mas não elimina, a exfiltração: destinos liberados (GitHub, registros, provedores de IA) ainda podem receber dados.
 
 ## Persistência
 

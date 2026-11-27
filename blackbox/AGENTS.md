@@ -39,6 +39,7 @@ Use `VERIFY_PULL=0 sandbox-verify` para verificações sem baixar a imagem BusyB
 
 - Não montar `/run/user/*/podman/podman.sock`, `/var/run/docker.sock`, o `HOME` completo, chaves SSH ou sockets de agentes do host.
 - Não adicionar `privileged: true`, `network_mode: host`, `cap_add: SYS_ADMIN`, `security_opt: seccomp=unconfined` ou `user: "0"` como solução de problema.
+- Não ligar o serviço `dev` a uma rede com saída nem remover `HTTP(S)_PROXY` para contornar o proxy de egress. Se um destino necessário for negado, informar o usuário e propor a linha para `config/egress/allowlist.txt`.
 - Não usar `no-new-privileges` no container externo sem investigar: `newuidmap` e `newgidmap` são necessários para o rootless aninhado.
 - `/dev/fuse` e `label=disable` são exceções deliberadas para o Podman aninhado. Explicar qualquer alteração em `docs/SECURITY.md`.
 - Não montar todo o `XDG_RUNTIME_DIR`. Expor somente os sockets necessários.

@@ -28,6 +28,7 @@ fi
 
 SERVICE="dev"
 NAME="${SANDBOX_NAME:-sandbox-ai}"
+PROXY_NAME="${NAME}-egress"
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-sandbox}"
 # Assign separately from export so a realpath failure is not masked. On
 # failure keep the unresolved path: need_host then reports it by name, and
@@ -104,6 +105,12 @@ compose_all() {
 
 container_exists() {
     podman container exists "${NAME}"
+}
+
+# Without the proxy the agent has no network at all (fail closed), so a
+# sandbox whose proxy stopped is recreated instead of being reused.
+proxy_running() {
+    [[ "$(podman inspect --format '{{.State.Running}}' "${PROXY_NAME}" 2>/dev/null)" == "true" ]]
 }
 
 current_profile() {
@@ -191,7 +198,7 @@ start() {
         running="$(podman inspect --format '{{.State.Running}}' "${NAME}")"
         if [[ "$(current_profile)" == "${profile}" ]] && \
            [[ "$(current_config_id)" == "${SANDBOX_CONFIG_ID}" ]] && \
-           [[ "${running}" == "true" ]]; then
+           [[ "${running}" == "true" ]] && proxy_running; then
             return
         fi
         if [[ "${running}" == "true" ]]; then
@@ -199,7 +206,7 @@ start() {
                 "$(current_profile)" "${profile}" >&2
         fi
         # Changing config, workspace, sockets or devices requires recreation.
-        compose_base down >/dev/null 2>&1 || podman rm -f "${NAME}"
+        compose_base down >/dev/null 2>&1 || podman rm -f "${NAME}" "${PROXY_NAME}"
     fi
 
     compose_all up -d
@@ -218,6 +225,7 @@ current_workspace() {
 start_any() {
     if container_exists && \
        [[ "$(podman inspect --format '{{.State.Running}}' "${NAME}")" == "true" ]] && \
+       proxy_running && \
        [[ "$(current_profile)" != "headless" ]] && \
        [[ "$(current_workspace)" == "${WORKSPACE_DIR}" ]] && \
        podman image exists localhost/sandbox-ai:2.4.1 && \
