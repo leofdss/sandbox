@@ -4,6 +4,54 @@ Repositório completo para recriar um ambiente de desenvolvimento com **OpenCode
 
 Nenhum caminho deste guia depende do computador onde o repositório foi criado. Todos os comandos são relativos à **raiz do repositório** (a pasta que contém este `README.md` e o `sandbox.sh`), qualquer que seja o local do clone.
 
+## Visão geral
+
+```mermaid
+flowchart LR
+    user(["👤 Você<br/>./sandbox.sh shell · ai"])
+
+    subgraph host["🖥️ Host Linux ou WSL2 · Podman rootless · sem VM extra"]
+        direction LR
+
+        subgraph repo["Repositório"]
+            blackbox["📦 blackbox/<br/>imagem, Compose e scripts<br/><i>não é montado</i>"]
+            projects["📁 sandbox/<br/>seus projetos"]
+        end
+
+        subgraph internal["🔒 Rede interna · sem rota para fora"]
+            subgraph dev["Container do agente · sandbox-ai"]
+                direction TB
+                shell["🐟 fish + starship"]
+                opencode["🤖 OpenCode"]
+                tools["git · node · python"]
+                nested["Podman aninhado"]
+                dbx["distrobox<br/>Fedora, Ubuntu…"]
+                nested --> dbx
+            end
+            proxy["🛡️ egress-proxy<br/>tinyproxy · somente leitura"]
+        end
+
+        volumes[("💾 Volumes nomeados<br/>credenciais, sessões,<br/>imagens aninhadas")]
+        gui["🎨 Wayland · áudio · GPU<br/><i>opcionais</i>"]
+        secrets["🚫 HOME, chaves SSH e<br/>socket Podman/Docker do host"]
+    end
+
+    allow["✅ Allowlist<br/>IA, GitHub, registros OCI,<br/>npm, PyPI"]
+    deny["⛔ Resto da internet"]
+
+    user --> dev
+    blackbox -.->|"./sandbox build"| dev
+    projects ==>|"/workspace"| dev
+    volumes --- dev
+    gui -.->|"sockets individuais"| dev
+    secrets -.-x|"nunca montados"| dev
+    dev -->|"HTTP(S)_PROXY"| proxy
+    proxy -->|"HTTPS :443"| allow
+    proxy -.-x|"negado"| deny
+```
+
+Um agente de IA trabalha num container rootless que só enxerga a pasta `sandbox/`. Ele não tem rede própria: tudo sai por um proxy que libera apenas uma lista de domínios. Dentro dele há Podman e distrobox para criar outros ambientes sem tocar no host. Detalhes no [guia técnico](blackbox/README.md).
+
 ## Estrutura do repositório
 
 ```text
@@ -16,8 +64,8 @@ Nenhum caminho deste guia depende do computador onde o repositório foi criado. 
 │   ├── sandbox           # script real com todos os comandos
 │   ├── Containerfile     # definição da imagem
 │   ├── compose*.yaml     # perfil padrão e perfis opcionais (GUI, áudio, GPU, portas)
-│   ├── scripts/          # entrypoint, healthcheck e testes (copiados para a imagem)
-│   ├── config/           # configuração do OpenCode, Git e Bash (copiados para a imagem)
+│   ├── scripts/          # entrypoint, healthcheck, testes e validate.sh (contrato)
+│   ├── config/           # OpenCode, proxy de egress, Git, fish e distrobox (copiados para a imagem)
 │   ├── .opencode/        # agentes e comandos do OpenCode (copiados para a imagem)
 │   └── docs/             # arquitetura, segurança, GUI, OpenCode e fontes
 └── sandbox/              # PROJETOS DO USUÁRIO (vira /workspace dentro do container)
@@ -92,7 +140,8 @@ WORKSPACE_DIR="$PWD/sandbox/meu-app" ./sandbox.sh ai
 | `./sandbox.sh build` | Constrói a imagem. |
 | `./sandbox.sh verify` | Testa ferramentas e Podman aninhado. |
 | `./sandbox.sh gui-verify` | Testa containers, Wayland e áudio. |
-| `./sandbox.sh shell` | Abre shell headless. |
+| `./sandbox.sh validate` | Valida saúde e isolamento (contrato do ambiente). |
+| `./sandbox.sh shell` | Abre fish + starship no perfil headless. |
 | `./sandbox.sh gui` | Abre shell com Wayland e áudio detectado. |
 | `./sandbox.sh status` | Mostra o estado do serviço. |
 | `./sandbox.sh down` | Remove o container e preserva os volumes. |
@@ -143,7 +192,8 @@ Se você é um agente lendo este repositório, siga esta ordem:
 | Imagem e pacotes instalados | `blackbox/Containerfile` |
 | Container, mounts e volumes | `blackbox/compose.yaml` |
 | GUI, áudio, GPU e portas | `blackbox/compose.<perfil>.yaml` e `blackbox/docs/GUI.md` |
-| Testes do ambiente | `blackbox/scripts/verify.sh` |
+| Testes do ambiente | `blackbox/scripts/verify.sh` (dentro do container) |
+| Contrato de saúde e isolamento | `blackbox/scripts/validate.sh` (`./sandbox.sh validate`) |
 | Permissões do OpenCode | `blackbox/config/opencode/opencode.jsonc` e `blackbox/docs/OPENCODE.md` |
 | Agentes revisores | `blackbox/.opencode/agents/` |
 | Valores padrão opcionais | `blackbox/.env.example` (copie para `blackbox/.env`) |
