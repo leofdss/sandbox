@@ -4,6 +4,54 @@ Ambiente de desenvolvimento recriável com **OpenCode V2, Git, Podman e podman-c
 
 > **Linux ou WSL2.** Em Linux o ambiente usa apenas containers rootless. No Windows, WSL2 já é uma camada de virtualização do próprio sistema; este projeto não cria uma VM adicional. Em macOS/Windows sem WSL, o Podman Machine normalmente já usa uma VM.
 
+## Visão geral
+
+```mermaid
+flowchart LR
+    user(["👤 Você<br/>./sandbox.sh shell · ai"])
+
+    subgraph host["🖥️ Host Linux ou WSL2 · Podman rootless · sem VM extra"]
+        direction LR
+
+        subgraph repo["Repositório"]
+            blackbox["📦 blackbox/<br/>imagem, Compose e scripts<br/><i>não é montado</i>"]
+            projects["📁 sandbox/<br/>seus projetos"]
+        end
+
+        subgraph internal["🔒 Rede interna · sem rota para fora"]
+            subgraph dev["Container do agente · sandbox-ai"]
+                direction TB
+                shell["🐟 fish + starship"]
+                opencode["🤖 OpenCode"]
+                tools["git · node · python"]
+                nested["Podman aninhado"]
+                dbx["distrobox<br/>Fedora, Ubuntu…"]
+                nested --> dbx
+            end
+            proxy["🛡️ egress-proxy<br/>tinyproxy · somente leitura"]
+        end
+
+        volumes[("💾 Volumes nomeados<br/>credenciais, sessões,<br/>imagens aninhadas")]
+        gui["🎨 Wayland · áudio · GPU<br/><i>opcionais</i>"]
+        secrets["🚫 HOME, chaves SSH e<br/>socket Podman/Docker do host"]
+    end
+
+    allow["✅ Allowlist<br/>IA, GitHub, registros OCI,<br/>npm, PyPI"]
+    deny["⛔ Resto da internet"]
+
+    user --> dev
+    blackbox -.->|"./sandbox build"| dev
+    projects ==>|"/workspace"| dev
+    volumes --- dev
+    gui -.->|"sockets individuais"| dev
+    secrets -.-x|"nunca montados"| dev
+    dev -->|"HTTP(S)_PROXY"| proxy
+    proxy -->|"HTTPS :443"| allow
+    proxy -.-x|"negado"| deny
+```
+
+O agente trabalha num container rootless que só enxerga a pasta de projetos. Ele não tem rede própria: tudo sai por um proxy que libera apenas uma lista de domínios. Dentro dele há Podman e distrobox para criar outros ambientes sem tocar no host. A validação do contrato de saúde e isolamento é feita por `./sandbox validate`.
+
 ## Separação entre ambiente e projetos
 
 ```text
