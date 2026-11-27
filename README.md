@@ -148,6 +148,51 @@ WORKSPACE_DIR="$PWD/sandbox/meu-app" ./sandbox.sh ai
 
 Todas as demais opções estão em `./sandbox.sh help`.
 
+## Liberar domínios na allowlist
+
+O container do agente não tem acesso direto à internet: tudo passa pelo proxy de egress, que só libera os domínios de [`blackbox/config/egress/allowlist.txt`](blackbox/config/egress/allowlist.txt). A lista fica dentro da imagem, então editar o arquivo só tem efeito depois de um novo build.
+
+**1. Descubra qual domínio foi negado:**
+
+```bash
+podman logs sandbox-ai-egress 2>&1 | grep 'filtered domain'
+# NOTICE ... Proxying refused on filtered domain "registry.terraform.io"
+```
+
+**2. Acrescente uma linha** no formato `(^|\.)dominio\.tld$`, de preferência num grupo com comentário:
+
+```text
+# Terraform
+(^|\.)terraform\.io$
+```
+
+- `(^|\.)` libera o domínio e todos os subdomínios (`registry.terraform.io`, `releases.terraform.io`), mas não `outroterraform.io`.
+- Escape os pontos com `\.`.
+- O `$` no fim é obrigatório. Sem ele, `terraform.io.site-malicioso.com` também passaria.
+
+**3. Reconstrua e aplique:**
+
+```bash
+./sandbox.sh build
+./sandbox.sh up          # recria o proxy com a nova política
+./sandbox.sh validate
+```
+
+**4. Teste de dentro do sandbox:**
+
+```bash
+./sandbox.sh exec curl -sS -o /dev/null -w '%{http_code}\n' https://registry.terraform.io
+```
+
+Qualquer código HTTP, mesmo 403 ou 404, quer dizer que o proxy deixou passar. Se o domínio continuar bloqueado, o `curl` falha com `CONNECT tunnel failed`.
+
+Cuidados:
+
+- O `validate` aceita apenas linhas nesse formato (checagem S-06). Uma regra genérica como `.*`, ou uma sem o `$` no fim, é recusada de propósito.
+- O proxy só abre HTTPS na porta 443. Um serviço em outra porta, como SSH na 22 para `git@github.com`, não passa adicionando o domínio; para o Git, use a URL `https://`.
+- Libere só o necessário. Todo domínio da lista também é um lugar para onde código comprometido poderia enviar dados.
+- Gerenciadores de pacotes às vezes baixam de mirrors com outros nomes. Se o `dnf` ou o `apt` de um distrobox falhar, repita o passo 1 para descobrir quais hosts liberar.
+
 ## Replicar em outra máquina
 
 1. Instale os pré-requisitos do host.

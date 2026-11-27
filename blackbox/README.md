@@ -226,7 +226,7 @@ O `verify` executa um BusyBox sem rede, somente leitura e sem capabilities. Use 
 
 O container `dev` fica somente na rede interna `sandbox_internal`, sem rota padrão nem DNS externo. A única saída é o serviço `egress-proxy` (tinyproxy, container `sandbox-ai-egress`), que também está na rede `sandbox_egress` e encaminha apenas para os domínios de [`config/egress/allowlist.txt`](config/egress/allowlist.txt), e HTTPS somente na porta 443. `HTTP(S)_PROXY` já vem configurado, então `curl`, `git`, `npm`, `pip`, OpenCode e pulls do Podman aninhado funcionam sem ajuste; programas que ignoram o proxy simplesmente não têm rede.
 
-Para liberar outro destino, adicione uma linha à allowlist e rode `./sandbox build` e `./sandbox up`. O `verify` confirma que não há rota direta, que um host fora da lista é negado e que um host liberado responde. Conexões negadas aparecem em `podman logs sandbox-ai-egress`.
+Para liberar outro destino, adicione uma linha à allowlist e rode `./sandbox build` e `./sandbox up` (passo a passo em [Liberar domínios na allowlist](../README.md#liberar-domínios-na-allowlist)). O `verify` confirma que não há rota direta, que um host fora da lista é negado e que um host liberado responde. Conexões negadas aparecem em `podman logs sandbox-ai-egress`.
 
 Os containers internos usam a rede do container externo, conforme a configuração recomendada da imagem oficial `quay.io/podman/stable`. Assim, publicar uma porta no Podman **interno** não a publica automaticamente no host. Para expor `APP_PORT` somente em loopback:
 
