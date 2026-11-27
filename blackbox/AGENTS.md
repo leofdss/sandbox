@@ -62,7 +62,7 @@ Use `VERIFY_PULL=0 sandbox-verify` para verificações sem baixar a imagem BusyB
 - Preservar o nome do serviço `dev` e os caminhos internos `/workspace`, `/home/podman` e `/run/user/1000`, salvo mudança coordenada em todos os arquivos.
 - Não colocar código do ambiente em `<raiz>/sandbox/` nem projetos do usuário em `<raiz>/blackbox/`. Alterações no ambiente são feitas no host e entram no container por novo build.
 - Manter o perfil padrão sem portas publicadas e sem acesso a GUI, áudio ou GPU.
-- Atualizar `README.md`, `docs/` e `AGENTS.md` quando comandos ou arquitetura mudarem.
+- Atualizar o `README.md` da raiz (guia de uso), `docs/` e `AGENTS.md` quando comandos ou arquitetura mudarem. O `blackbox/README.md` é só um índice.
 
 ## Mensagens de commit
 
