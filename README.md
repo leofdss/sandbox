@@ -36,7 +36,7 @@ flowchart LR
         secrets["🚫 HOME, chaves SSH e<br/>socket Podman/Docker do host"]
     end
 
-    allow["✅ Allowlist<br/>IA, GitHub, registros OCI,<br/>npm, PyPI"]
+    allow["✅ Allowlist<br/>IA, GitHub, registros OCI,<br/>npm, PyPI,<br/>Rust: crates.io, rustup"]
     deny["⛔ Resto da internet"]
 
     user --> dev
