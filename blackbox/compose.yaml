@@ -90,6 +90,12 @@ services:
     command: ["-d", "-c", "/etc/tinyproxy/sandbox.conf"]
     restart: "no"
     read_only: true
+    tmpfs:
+      # Cover the VOLUME declarations inherited from the base image, which
+      # would otherwise leak a writable anonymous volume per recreation.
+      - /home/podman/.local/share/containers:ro,nosuid,nodev,noexec,size=1m
+      - /var/lib/containers:ro,nosuid,nodev,noexec,size=1m
+      - /var/tmp:rw,nosuid,nodev,noexec,size=1m
     cap_drop:
       - ALL
     security_opt:
