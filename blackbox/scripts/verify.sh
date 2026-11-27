@@ -36,14 +36,16 @@ if timeout 5 bash -c 'exec 3<>/dev/tcp/1.1.1.1/443' 2>/dev/null; then
 fi
 printf 'direct TCP egress: blocked\n'
 # Through the proxy: allowlisted host works, other hosts and ports do not.
-timeout 20 curl -fsS -o /dev/null https://api.github.com/zen
+# No -f: any HTTP answer from the destination (even a 403 rate limit) proves
+# the tunnel opened; a proxy denial fails the CONNECT itself.
+timeout 20 curl -sS -o /dev/null https://api.github.com/zen
 printf 'allowlisted host via proxy: ok\n'
-if timeout 20 curl -fsS -o /dev/null https://example.com 2>/dev/null; then
+if timeout 20 curl -sS -o /dev/null https://example.com 2>/dev/null; then
     echo 'FAIL: non-allowlisted host reachable through the proxy' >&2
     exit 1
 fi
 printf 'non-allowlisted host via proxy: denied\n'
-if timeout 20 curl -fsS -o /dev/null https://github.com:22 2>/dev/null; then
+if timeout 20 curl -sS -o /dev/null https://github.com:22 2>/dev/null; then
     echo 'FAIL: proxy tunnels to a non-TLS port' >&2
     exit 1
 fi
