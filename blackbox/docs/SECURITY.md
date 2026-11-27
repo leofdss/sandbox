@@ -36,6 +36,12 @@ Isso desativa a separação SELinux **do container externo**, não o SELinux do 
 
 `label=nested` pode ser avaliado em hosts/políticas mais recentes, mas não é usado como default sem uma matriz de testes equivalente.
 
+### distrobox com `--privileged` aninhado
+
+O distrobox cria seus containers com `--privileged` **no Podman aninhado**. Isso concede apenas o que o sandbox já tem: o user namespace, o bounding set de capabilities (sem `SYS_ADMIN`, checagem I-04 do `validate`), o seccomp e a rede interna do container externo continuam valendo. O "host" que o distrobox integra (`/run/host`, `HOME`, sockets) é o próprio sandbox.
+
+O seccomp externo bloqueia `sethostname`, e a configuração aninhada desativa cgroups. Por isso `scripts/distrobox-podman.sh` remove `--hostname` e troca `--pid host` por `--pid private` somente no `create` do distrobox. Não "conserte" o distrobox liberando seccomp, `SYS_ADMIN` ou cgroups no container externo.
+
 ### Sem `no-new-privileges`
 
 `newuidmap`/`newgidmap` usam mecanismos de transição necessários aos mapeamentos rootless. Ativar `no-new-privileges` no container externo pode impedir o Podman aninhado. Por isso não adicionamos essa opção como “hardening” automático.

@@ -51,11 +51,11 @@ Uso: ./sandbox <comando> [opções]
 
   build                    constrói a imagem fixada no Containerfile
   up                       inicia o perfil headless
-  shell                    abre Bash (reutiliza GUI/portas já em execução)
+  shell                    abre fish + starship (reutiliza GUI/portas já em execução)
   ai                       abre OpenCode V2 com servidor privado
   run <prompt...>          executa um prompt não interativo no OpenCode
   exec <comando...>        executa no ambiente atual (headless ou GUI)
-  gui [opções] [-- cmd]    inicia Wayland + áudio detectado e abre Bash
+  gui [opções] [-- cmd]    inicia Wayland + áudio detectado e abre fish
       --gpu                também expõe /dev/dri/renderD128
       --wslg-gpu           também expõe a vGPU do WSLg (/dev/dxg)
       --no-x11             não expõe a compatibilidade X11
@@ -377,7 +377,7 @@ case "${command_name}" in
         ;;
     shell)
         start_any
-        compose_base exec "${SERVICE}" bash --login
+        compose_base exec "${SERVICE}" fish --login
         ;;
     ai)
         start_any
@@ -404,7 +404,7 @@ case "${command_name}" in
         elif [[ "${#GUI_ARGS[@]}" -gt 0 ]]; then
             compose_all exec "${SERVICE}" "${GUI_ARGS[@]}"
         else
-            compose_all exec "${SERVICE}" bash --login
+            compose_all exec "${SERVICE}" fish --login
         fi
         ;;
     verify)

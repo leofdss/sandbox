@@ -97,7 +97,7 @@ O caminho escolhido continua montado como `/workspace`. Arquivos criados nele pe
 |---|---|
 | `./sandbox build` | Constrói a imagem fixada. |
 | `./sandbox up` | Inicia o perfil headless sem portas. |
-| `./sandbox shell` | Abre Bash no perfil headless. |
+| `./sandbox shell` | Abre fish com prompt starship no perfil headless. |
 | `./sandbox ai` | Abre OpenCode com servidor privado. |
 | `./sandbox run "Explique este repositório"` | Executa um prompt não interativo. |
 | `./sandbox exec <cmd>` | Executa um comando no perfil atual. |
@@ -146,6 +146,21 @@ Opções:
 
 Mais detalhes e solução de problemas em [docs/GUI.md](docs/GUI.md).
 
+## Shell e distrobox
+
+`./sandbox shell` (e `gui` sem comando) abre **fish** com prompt **starship**, independente do shell do host: o shell de login do usuário no container é `/usr/bin/fish`. O prompt usa o preset `no-nerd-font` em `/etc/starship.toml`, que funciona em qualquer terminal sem fontes especiais; um `~/.config/starship.toml` pessoal tem prioridade. Bash continua instalado e é usado pelos scripts.
+
+O **distrobox** cria ambientes de outras distribuições sobre o Podman aninhado, com `/workspace` e o `HOME` do sandbox montados:
+
+```bash
+./sandbox shell
+distrobox create -n ubuntu -i docker.io/library/ubuntu:24.04
+distrobox enter ubuntu
+sudo apt update && sudo apt install -y build-essential
+```
+
+Os distroboxes ficam no volume `podman-storage` e sobrevivem à recriação do sandbox. Eles herdam a rede do sandbox, portanto também só saem pelo proxy: o `sudo` preserva as variáveis de proxy, mas repositórios de pacotes fora da allowlist precisam ser liberados em `config/egress/allowlist.txt`. O "host" do distrobox (`/run/host`, `distrobox-host-exec`) é o container do sandbox, não a sua máquina.
+
 ## Podman e Compose dentro do sandbox
 
 O socket `podman.sock` do host **não** é montado. Estes comandos usam o armazenamento aninhado:
@@ -184,7 +199,7 @@ APP_PORT=8080 ./sandbox ports
 
 O repositório pode ser copiado para outra máquina e reconstruído com os mesmos comandos. Os volumes **não são portáveis implicitamente**; faça backup separado se precisar de sessões, credenciais ou imagens. Excluí-los com `reset` não apaga o workspace, mas remove permanentemente esses dados e todos os containers aninhados.
 
-A imagem base é fixada por digest e o OpenCode por versão/SHA-256. Pacotes RPM auxiliares vêm dos repositórios Fedora no momento do build, portanto o resultado é reproduzível no nível de configuração, não uma promessa de build bit a bit idêntico ao longo de anos.
+A imagem base é fixada por digest e o OpenCode e o starship por versão/SHA-256. Pacotes RPM auxiliares vêm dos repositórios Fedora no momento do build, portanto o resultado é reproduzível no nível de configuração, não uma promessa de build bit a bit idêntico ao longo de anos.
 
 ## Servidor headless e GUI remota
 
@@ -202,6 +217,9 @@ Um socket Wayland é local ao servidor: montá-lo não o transporta para o seu l
 ├── sandbox                       interface de uso e detecção de sockets
 ├── scripts/                      entrypoint, healthcheck e testes
 ├── scripts/validate.sh           contrato de saúde e isolamento
+├── scripts/distrobox-*.sh        adaptação do distrobox ao Podman aninhado
+├── config/sandbox.fish           shell interativo (fish + starship)
+├── config/distrobox.conf         padrões do distrobox
 ├── config/opencode/              políticas e instruções gerenciadas
 ├── config/egress/                proxy e allowlist de saída
 ├── AGENTS.md                     orientação persistente para agentes

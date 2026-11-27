@@ -9,6 +9,18 @@ podman --version
 podman-compose --version
 python3 --version
 node --version
+fish --version
+starship --version | head -1
+distrobox version
+# The interactive shell is fish no matter which shell the host uses.
+test "$(getent passwd "$(id -un)" | cut -d: -f7)" = /usr/bin/fish
+fish -ic 'functions -q fish_prompt; and string match -q "*starship*" (functions fish_prompt)' \
+    || { echo 'FAIL: fish prompt is not starship' >&2; exit 1; }
+printf 'login shell: fish + starship\n'
+# distrobox must go through the sandbox shim; plain podman create fails here.
+test "$(command -v distrobox)" = /usr/local/bin/distrobox
+test "$(PATH=/usr/local/libexec/sandbox/distrobox-bin:${PATH} command -v podman)" = /usr/local/libexec/sandbox/distrobox-bin/podman
+printf 'distrobox wrapper: ok\n'
 
 printf '%s\n' '== Workspace =='
 test -w /workspace

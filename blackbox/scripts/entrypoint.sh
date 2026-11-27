@@ -25,7 +25,7 @@ mkdir -p \
 chmod 0700 "${XDG_RUNTIME_DIR}" "${XDG_RUNTIME_DIR}/pulse"
 
 if [[ "$#" -eq 0 ]]; then
-    set -- bash --login
+    set -- fish --login
 fi
 
 exec "$@"

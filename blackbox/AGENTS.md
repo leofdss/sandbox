@@ -27,6 +27,7 @@ Dentro do container:
 
 ```bash
 sandbox-verify
+distrobox list
 podman info
 podman-compose --version
 opencode --version
@@ -55,7 +56,8 @@ Use `VERIFY_PULL=0 sandbox-verify` para verificações sem baixar a imagem BusyB
 - Documentação e instruções em português do Brasil; identificadores e comandos em inglês.
 - YAML e JSONC com dois espaços; shell com quatro espaços e `set -euo pipefail`.
 - Manter compatibilidade com OpenCode V2: usar `permissions`, `shell`, `subagent` e frontmatter V2, não os campos V1 `permission`, `bash` ou `task`.
-- Fixar versões e checksums do OpenCode e o digest multi-arquitetura da imagem base. Não introduzir `latest`.
+- Fixar versões e checksums do OpenCode e do starship e o digest multi-arquitetura da imagem base. Não introduzir `latest`.
+- O shell interativo é fish + starship (`config/sandbox.fish`); scripts continuam em Bash. Não remover o shim do distrobox (`scripts/distrobox-podman.sh`) nem contorná-lo liberando seccomp, `SYS_ADMIN` ou cgroups no container externo.
 - Não executar scripts de instalação remotos diretamente no shell. Downloads devem usar HTTPS e verificação SHA-256.
 - Preservar o nome do serviço `dev` e os caminhos internos `/workspace`, `/home/podman` e `/run/user/1000`, salvo mudança coordenada em todos os arquivos.
 - Não colocar código do ambiente em `<raiz>/sandbox/` nem projetos do usuário em `<raiz>/blackbox/`. Alterações no ambiente são feitas no host e entram no container por novo build.

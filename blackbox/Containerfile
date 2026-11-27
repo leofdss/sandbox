@@ -5,6 +5,7 @@
 FROM quay.io/podman/stable:v6.1.3-immutable@sha256:4cc31850c189386faca95d72988fe9573b3df06360cb65aea3ff5b17a04d0454
 
 ARG OPENCODE_VERSION=2.4.1
+ARG STARSHIP_VERSION=1.27.0
 ARG TARGETARCH=amd64
 
 USER root
@@ -19,8 +20,10 @@ RUN dnf -y install \
       dejavu-sans-fonts \
       dejavu-sans-mono-fonts \
       dejavu-serif-fonts \
+      distrobox \
       fd-find \
       findutils \
+      fish \
       fontconfig \
       foot \
       gcc \
@@ -52,6 +55,7 @@ RUN dnf -y install \
       tar \
       tinyproxy \
       unzip \
+      util-linux \
       wayland-utils \
       which \
       xdg-utils \
@@ -85,9 +89,48 @@ RUN set -eux; \
     opencode --version; \
     rm -f "/tmp/${asset}"
 
+# Starship is not packaged by Fedora. Static musl build from the official
+# release; checksums match the .sha256 files published with v1.27.0.
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+      amd64) \
+        asset="starship-x86_64-unknown-linux-musl.tar.gz"; \
+        checksum="10c8eb4cb3b761d9bf59ea828444c2dab36c900b7d69a69e08814b286969df89" \
+        ;; \
+      arm64) \
+        asset="starship-aarch64-unknown-linux-musl.tar.gz"; \
+        checksum="341f5cbf24699fa0b27ec88965ad25f862ea09e15d35a543fd6ffdff1d2aa00d" \
+        ;; \
+      *) echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl --proto '=https' --tlsv1.2 -fL \
+      "https://github.com/starship/starship/releases/download/v${STARSHIP_VERSION}/${asset}" \
+      -o "/tmp/${asset}"; \
+    echo "${checksum}  /tmp/${asset}" | sha256sum -c -; \
+    tar -xzf "/tmp/${asset}" -C /usr/local/bin starship; \
+    chmod 0755 /usr/local/bin/starship; \
+    starship --version; \
+    # Plain-symbol preset: renders in any host terminal, no Nerd Font needed.
+    starship preset no-nerd-font -o /etc/starship.toml; \
+    chmod 0644 /etc/starship.toml; \
+    rm -f "/tmp/${asset}"; \
+    # Interactive shell inside the sandbox is fish, whatever the host uses.
+    usermod --shell /usr/bin/fish podman
+
 COPY --chmod=0755 scripts/entrypoint.sh /usr/local/bin/sandbox-entrypoint
 COPY --chmod=0755 scripts/healthcheck.sh /usr/local/bin/sandbox-healthcheck
 COPY --chmod=0755 scripts/verify.sh /usr/local/bin/sandbox-verify
+COPY --chmod=0755 scripts/distrobox-podman.sh /usr/local/libexec/sandbox/distrobox-bin/podman
+COPY --chmod=0755 scripts/distrobox-wrapper.sh /usr/local/libexec/sandbox/distrobox-wrapper
+COPY --chmod=0755 scripts/distrobox-init-hook.sh /usr/local/libexec/sandbox/distrobox-init-hook
+COPY --chmod=0644 config/distrobox.conf /etc/distrobox/distrobox.conf
+# Host-side distrobox commands go through the wrapper (see the scripts).
+# distrobox-init/-export/-host-exec run inside the distrobox and stay as is.
+RUN for cmd in distrobox distrobox-assemble distrobox-create distrobox-enter \
+        distrobox-ephemeral distrobox-generate-entry distrobox-list distrobox-rm \
+        distrobox-stop distrobox-upgrade; do \
+      ln -s /usr/local/libexec/sandbox/distrobox-wrapper "/usr/local/bin/${cmd}"; \
+    done
 COPY --chmod=0644 config/opencode/opencode.jsonc /etc/opencode/opencode.jsonc
 COPY --chmod=0644 AGENTS.md /etc/opencode/instructions/AGENTS.md
 COPY --chmod=0644 docs/OPENCODE.md /etc/opencode/instructions/OPENCODE.md
@@ -96,6 +139,7 @@ COPY --chmod=0644 .opencode/agents /etc/opencode/agents
 COPY --chmod=0644 .opencode/commands /etc/opencode/commands
 COPY --chmod=0644 config/gitconfig /etc/gitconfig
 COPY --chmod=0644 config/bashrc.sh /etc/profile.d/sandbox.sh
+COPY --chmod=0644 config/sandbox.fish /etc/fish/conf.d/sandbox.fish
 # Egress proxy policy, used by the separate egress-proxy service. Baked into
 # the image: edits in the agent container never reach the proxy container.
 COPY --chmod=0644 config/egress/tinyproxy.conf /etc/tinyproxy/sandbox.conf

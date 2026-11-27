@@ -38,6 +38,12 @@ A imagem deriva de `quay.io/podman/stable:v6.1.3-immutable` pelo digest multi-ar
 
 `/dev/fuse` é o único dispositivo do perfil headless. `label=disable` é exigido pela receita oficial para containers aninhados em hosts SELinux e não desativa o SELinux do host. O impacto está documentado em [SECURITY.md](SECURITY.md).
 
+## Shell e ferramentas interativas
+
+O shell de login do usuário no container é fish com starship (binário estático fixado por SHA-256), configurado em `/etc/fish/conf.d/sandbox.fish`; assim o ambiente não depende do shell nem da configuração do host. Os scripts do projeto continuam em Bash.
+
+O distrobox é empacotado pelo Fedora e roda sobre o Podman aninhado. Links em `/usr/local/bin` passam os comandos `distrobox*` por `scripts/distrobox-wrapper.sh`, que coloca o shim `scripts/distrobox-podman.sh` primeiro no `PATH` apenas para o distrobox. Um init hook preserva as variáveis do proxy no `sudo` de cada distrobox.
+
 ## Rede em camadas
 
 O Compose externo coloca o container `dev` apenas na rede `sandbox_internal` (`internal: true`: sem rota padrão e sem DNS externo) e sem portas publicadas. O serviço `egress-proxy`, um tinyproxy rodando da mesma imagem com filesystem somente leitura e sem capabilities, é o único membro também ligado à rede `sandbox_egress`, com saída. A política (allowlist de domínios, `CONNECT` só na porta 443) é copiada para a imagem; alterações feitas dentro do container do agente não chegam ao proxy. A configuração da imagem oficial define `netns="host"` para o motor aninhado: “host” nesse caso é o namespace do **container externo**, não o namespace físico da máquina.
