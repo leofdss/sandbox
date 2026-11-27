@@ -20,6 +20,8 @@ Ele **não** promete conter um exploit de kernel, um adversário com controle to
 | OpenCode | Servidor privado, shell com confirmação, leituras sensíveis negadas e push/sudo bloqueados. |
 | Supply chain | Digest multi-arquitetura da base e SHA-256 dos binários OpenCode. |
 
+Cada controle acima é verificado em execução por `./sandbox validate` ([`scripts/validate.sh`](../scripts/validate.sh)), que inspeciona os containers de fora (`podman inspect`) e de dentro (`/proc`, `/dev`, rede). Uma mudança que faça alguma checagem falhar quebra um requisito; altere este documento e a checagem juntos apenas quando o requisito mudar de propósito.
+
 ## Exceções deliberadas
 
 ### `/dev/fuse`

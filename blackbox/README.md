@@ -102,6 +102,7 @@ O caminho escolhido continua montado como `/workspace`. Arquivos criados nele pe
 | `./sandbox run "Explique este repositório"` | Executa um prompt não interativo. |
 | `./sandbox exec <cmd>` | Executa um comando no perfil atual. |
 | `./sandbox verify` | Testa ferramentas, escrita, contenção de rede e Podman aninhado. |
+| `./sandbox validate` | Valida saúde e isolamento de fora e de dentro dos containers; `--static` só confere os arquivos. |
 | `./sandbox gui` | Abre shell com Wayland e áudio detectado. |
 | `./sandbox gui-verify` | Testa containers, Wayland e áudio. |
 | `./sandbox doctor` | Mostra pré-requisitos e sockets do host. |
@@ -200,6 +201,7 @@ Um socket Wayland é local ao servidor: montá-lo não o transporta para o seu l
 ├── compose.*.yaml                GUI, áudio, GPU e portas opcionais
 ├── sandbox                       interface de uso e detecção de sockets
 ├── scripts/                      entrypoint, healthcheck e testes
+├── scripts/validate.sh           contrato de saúde e isolamento
 ├── config/opencode/              políticas e instruções gerenciadas
 ├── config/egress/                proxy e allowlist de saída
 ├── AGENTS.md                     orientação persistente para agentes

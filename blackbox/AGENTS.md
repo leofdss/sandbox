@@ -85,9 +85,9 @@ Usar [Conventional Commits](https://www.conventionalcommits.org/pt-br/v1.0.0/):
 
 1. Ler `docs/ARCHITECTURE.md` e `docs/SECURITY.md` antes de alterar privilégios, mounts ou rede.
 2. Fazer a menor alteração que atenda ao pedido; não sobrescrever trabalho do usuário.
-3. Validar scripts com `bash -n sandbox scripts/*.sh`.
-4. Validar o Compose com `podman-compose -f compose.yaml config` e, quando GUI for alterada, mesclar os overrides correspondentes.
-5. Executar `./sandbox verify` após mudanças de imagem, Compose, armazenamento ou permissões.
+3. Rodar `./sandbox validate` **antes e depois** de mudanças em imagem, Compose, rede, mounts, permissões ou no script `sandbox`. O `scripts/validate.sh` é o contrato de saúde e isolamento: cada checagem tem um ID e o motivo. Nunca enfraquecer, pular ou remover uma checagem para fazê-la passar; corrigir a mudança. Se o usuário pedir explicitamente para mudar um requisito, alterar a checagem, o motivo e `docs/SECURITY.md` no mesmo commit. Requisito novo = checagem nova com ID novo.
+4. Sem Podman disponível, rodar ao menos `./sandbox validate --static` e declarar que a validação em runtime não foi executada.
+5. Validar o Compose com `podman-compose -f compose.yaml config` e, quando GUI for alterada, mesclar os overrides correspondentes e rodar `./sandbox validate` com o perfil GUI ativo.
 6. Para Wayland/PipeWire, executar `./sandbox gui-verify`; se não houver sessão gráfica, declarar que o teste não foi executado em vez de afirmar que passou.
 7. Revisar o diff e procurar segredos antes de concluir. Não fazer commit ou push automaticamente; quando o usuário pedir um commit, seguir a seção "Mensagens de commit".
 
